@@ -10,6 +10,7 @@
 web/node_modules/
 web/.next/
 web/out/
+web/.pnpm-store/
 web/next-env.d.ts.bak
 
 # Env

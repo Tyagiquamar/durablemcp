@@ -82,10 +82,13 @@ services:
     environment:
       DURABLEMCP_API_URL: http://server:8080
       READER_API_KEY: dev-reader-key
+      CI: "true"
     volumes:
       - ./web:/app
+      - durablemcp-web-modules:/app/node_modules
 
 volumes:
   durablemcp-postgres:
   durablemcp-gocache:
   durablemcp-gomod:
+  durablemcp-web-modules:
