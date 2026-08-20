@@ -1,0 +1,21 @@
+# Go
+/durablemcp-server
+/durablemcp-executor
+/durablemcp-scheduler
+*.exe
+*.test
+*.out
+
+# Node / Next
+web/node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts.bak
+
+# Env
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db

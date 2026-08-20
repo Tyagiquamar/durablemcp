@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: durablemcp
+      POSTGRES_USER: durablemcp
+      POSTGRES_PASSWORD: durablemcp
+    ports:
+      - "5432:5432"
+    volumes:
+      - durablemcp-postgres:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U durablemcp"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  server:
+    image: golang:1.23
+    working_dir: /app
+    command: go run ./cmd/server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://durablemcp:durablemcp@postgres:5432/durablemcp?sslmode=disable
+      READER_API_KEY: dev-reader-key
+      MCP_TRANSPORT: http
+      ALLOW_TEST_ENDPOINTS: "true"
+      GOFLAGS: -mod=mod
+    volumes:
+      - .:/app
+      - durablemcp-gocache:/root/.cache/go-build
+      - durablemcp-gomod:/go/pkg/mod
+
+  executor:
+    image: golang:1.23
+    working_dir: /app
+    command: go run ./cmd/executor
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://durablemcp:durablemcp@postgres:5432/durablemcp?sslmode=disable
+      POLL_INTERVAL_MS: "500"
+      LEASE_SECONDS: "30"
+      GOFLAGS: -mod=mod
+    volumes:
+      - .:/app
+      - durablemcp-gocache:/root/.cache/go-build
+      - durablemcp-gomod:/go/pkg/mod
+    deploy:
+      replicas: 2 # two executors to demonstrate fencing
+
+  scheduler:
+    image: golang:1.23
+    working_dir: /app
+    command: go run ./cmd/scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://durablemcp:durablemcp@postgres:5432/durablemcp?sslmode=disable
+      TICK_SECONDS: "5"
+      GOFLAGS: -mod=mod
+    volumes:
+      - .:/app
+      - durablemcp-gocache:/root/.cache/go-build
+      - durablemcp-gomod:/go/pkg/mod
+
+  dashboard:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && corepack prepare pnpm@11.8.0 --activate && pnpm install && pnpm dev -p 3000 -H 0.0.0.0"
+    depends_on:
+      - server
+    ports:
+      - "3100:3000"
+    environment:
+      DURABLEMCP_API_URL: http://server:8080
+      READER_API_KEY: dev-reader-key
+    volumes:
+      - ./web:/app
+
+volumes:
+  durablemcp-postgres:
+  durablemcp-gocache:
+  durablemcp-gomod:
