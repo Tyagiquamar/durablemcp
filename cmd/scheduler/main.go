@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/tyagiquamar/durablemcp/internal/config"
+	"github.com/tyagiquamar/durablemcp/internal/logging"
 	"github.com/tyagiquamar/durablemcp/internal/store"
 )
 
 func main() {
 	cfg := config.Load()
+	logger := logging.New(cfg.LogLevel)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -30,7 +32,7 @@ func main() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("durablemcp scheduler started (tick=%s)", interval)
+	logger.Info("durablemcp scheduler started", "tick", interval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -38,11 +40,11 @@ func main() {
 		case <-ticker.C:
 			changed, err := st.RunSchedulerPass(ctx)
 			if err != nil {
-				log.Printf("scheduler pass error: %v", err)
+				logger.Error("scheduler pass failed", "err", err)
 				continue
 			}
 			if changed > 0 {
-				log.Printf("scheduler pass changed=%d", changed)
+				logger.Info("scheduler pass", "changed", changed)
 			}
 		}
 	}

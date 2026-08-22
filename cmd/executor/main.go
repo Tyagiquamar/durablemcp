@@ -9,11 +9,13 @@ import (
 
 	"github.com/tyagiquamar/durablemcp/internal/config"
 	"github.com/tyagiquamar/durablemcp/internal/executor"
+	"github.com/tyagiquamar/durablemcp/internal/logging"
 	"github.com/tyagiquamar/durablemcp/internal/store"
 )
 
 func main() {
 	cfg := config.Load()
+	logger := logging.New(cfg.LogLevel)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -30,12 +32,13 @@ func main() {
 	}
 
 	runtime := &executor.Runtime{
-		Store:        st,
-		WorkerID:     cfg.WorkerID,
-		Handlers:     executor.Handlers(scratch),
-		PollInterval: cfg.PollInterval,
-		LeaseSeconds: cfg.LeaseSeconds,
-		Logger:       log.Default(),
+		Store:            st,
+		WorkerID:         cfg.WorkerID,
+		Handlers:         executor.Handlers(scratch),
+		PollInterval:     cfg.PollInterval,
+		LeaseSeconds:     cfg.LeaseSeconds,
+		HeartbeatTimeout: cfg.HeartbeatTimeout,
+		Logger:           logger,
 	}
 
 	if err := runtime.Run(ctx); err != nil && err != context.Canceled {

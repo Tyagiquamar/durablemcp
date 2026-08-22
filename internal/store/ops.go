@@ -207,8 +207,9 @@ func (p *Postgres) Complete(ctx context.Context, executionID string, token int64
 }
 
 // Fail records a failed attempt. When retries remain it schedules a retry with
-// exponential backoff; otherwise it marks the execution permanently failed. A
-// stale fencing token is rejected without mutating state.
+// exponential backoff; otherwise it marks the execution permanently failed.
+// The lease-token guard is part of the UPDATE itself, so a stale worker can
+// never interleave between the validity check and the state mutation.
 func (p *Postgres) Fail(ctx context.Context, executionID string, token int64, workerID, errMsg string) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -216,17 +217,21 @@ func (p *Postgres) Fail(ctx context.Context, executionID string, token int64, wo
 	}
 	defer rollback(ctx, tx)
 
-	var attempts, maxAttempts int
-	var valid bool
+	var attempts int
+	var terminal bool
 	err = tx.QueryRow(ctx, `
-		SELECT e.attempts, e.max_attempts,
-		       EXISTS (SELECT 1 FROM execution_leases l WHERE l.execution_id = e.id AND l.fencing_token = $2)
-		FROM executions e WHERE e.id = $1
-	`, executionID, token).Scan(&attempts, &maxAttempts, &valid)
-	if err != nil {
-		return err
-	}
-	if !valid {
+		UPDATE executions
+		SET status = CASE WHEN attempts >= max_attempts THEN 'failed'::execution_status ELSE 'pending'::execution_status END,
+		    error_message = $3,
+		    updated_at = now()
+		WHERE id = $1
+		  AND EXISTS (
+		    SELECT 1 FROM execution_leases l
+		    WHERE l.execution_id = executions.id AND l.fencing_token = $2
+		  )
+		RETURNING executions.attempts, executions.status = 'failed'
+	`, executionID, token, errMsg).Scan(&attempts, &terminal)
+	if errors.Is(err, pgx.ErrNoRows) {
 		if err := appendEvent(ctx, tx, executionID, "stale_rejected", workerID, &token, map[string]any{"reason": "failure rejected: fencing token superseded"}); err != nil {
 			return err
 		}
@@ -235,15 +240,15 @@ func (p *Postgres) Fail(ctx context.Context, executionID string, token int64, wo
 		}
 		return ErrStale
 	}
+	if err != nil {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM execution_leases WHERE execution_id = $1`, executionID); err != nil {
 		return err
 	}
 
-	if attempts >= maxAttempts {
-		if _, err := tx.Exec(ctx, `UPDATE executions SET status = 'failed', error_message = $2, updated_at = now() WHERE id = $1`, executionID, errMsg); err != nil {
-			return err
-		}
+	if terminal {
 		if err := appendEvent(ctx, tx, executionID, "failed", workerID, &token, map[string]any{"error": errMsg, "attempt": attempts}); err != nil {
 			return err
 		}
@@ -251,9 +256,6 @@ func (p *Postgres) Fail(ctx context.Context, executionID string, token int64, wo
 	}
 
 	backoff := time.Duration(1<<uint(attempts)) * time.Second
-	if _, err := tx.Exec(ctx, `UPDATE executions SET status = 'pending', error_message = $2, updated_at = now() WHERE id = $1`, executionID, errMsg); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO retry_schedule (execution_id, retry_at, attempt)
 		VALUES ($1, now() + make_interval(secs => $2), $3)

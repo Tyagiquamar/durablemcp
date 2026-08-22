@@ -157,6 +157,19 @@ MCP endpoints are unauthenticated (assume a local/trusted network).
 - **Live mode** (`?mode=live`): reads from `DURABLEMCP_API_URL`. It never
   substitutes fixture data — an unreachable API shows an explicit error state.
 
+## How This Is Tested
+
+No CI service runs these — `make verify` is the local pre-push ritual:
+
+```
+make verify   # build + vet + full suite (boots throwaway PostgreSQL via testcontainers)
+```
+
+| Suite | What it proves |
+|---|---|
+| `internal/store` | The guarantee matrix against real PostgreSQL: claim serialization under concurrent racers, monotonically increasing fencing tokens, stale heartbeat/complete/fail rejection with atomic `stale_rejected` events, duplicate-submit dedupe + cached-result replay, retry-exhaustion arcs, lease-expiry recovery, terminal failure at max attempts |
+| `internal/executor` | A real executor subprocess claims work and is SIGKILLed mid-heartbeat-window; the lease expires, another worker reclaims with a higher token, and the dead worker's late completion is rejected — the automated form of `scripts/fencing-demo.sh` |
+
 ## Capability Boundary
 
 **Implemented**

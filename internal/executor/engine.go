@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/tyagiquamar/durablemcp/internal/store"
@@ -22,7 +22,10 @@ type Runtime struct {
 	Handlers     map[string]Handler
 	PollInterval time.Duration
 	LeaseSeconds int
-	Logger       *log.Logger
+	// HeartbeatTimeout bounds each individual heartbeat round-trip so a hung
+	// database connection cannot wedge the heartbeat goroutine forever.
+	HeartbeatTimeout time.Duration
+	Logger           *slog.Logger
 }
 
 // Run drives the executor poll loop until the context is cancelled.
@@ -33,10 +36,13 @@ func (r *Runtime) Run(ctx context.Context) error {
 	if r.LeaseSeconds <= 0 {
 		r.LeaseSeconds = 30
 	}
-	if r.Logger == nil {
-		r.Logger = log.Default()
+	if r.HeartbeatTimeout <= 0 {
+		r.HeartbeatTimeout = 10 * time.Second
 	}
-	r.Logger.Printf("executor %s started (poll=%s lease=%ds)", r.WorkerID, r.PollInterval, r.LeaseSeconds)
+	if r.Logger == nil {
+		r.Logger = slog.Default()
+	}
+	r.Logger.Info("executor started", "worker", r.WorkerID, "poll", r.PollInterval, "lease_seconds", r.LeaseSeconds)
 
 	for {
 		select {
@@ -53,7 +59,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 			continue
 		}
 		if err != nil {
-			r.Logger.Printf("claim error: %v", err)
+			r.Logger.Error("claim failed", "err", err)
 			if !sleep(ctx, r.PollInterval) {
 				return ctx.Err()
 			}
@@ -78,21 +84,22 @@ func (r *Runtime) execute(ctx context.Context, claim store.Claim) {
 	result, err := handler(workCtx, claim.InputArgs)
 	if err != nil {
 		if ctxErr := workCtx.Err(); ctxErr != nil {
-			r.Logger.Printf("execution %s aborted (lease lost): %v", claim.ExecutionID, err)
+			r.Logger.Warn("execution aborted: lease lost mid-run", "execution_id", claim.ExecutionID, "handler_err", err)
 			return
 		}
 		if failErr := r.Store.Fail(ctx, claim.ExecutionID, claim.FencingToken, r.WorkerID, err.Error()); failErr != nil {
-			r.Logger.Printf("fail error for %s: %v", claim.ExecutionID, failErr)
+			r.Logger.Error("fail report rejected", "execution_id", claim.ExecutionID, "err", failErr)
 		}
 		return
 	}
 
 	if compErr := r.Store.Complete(ctx, claim.ExecutionID, claim.FencingToken, r.WorkerID, result); compErr != nil {
 		if errors.Is(compErr, store.ErrStale) {
-			r.Logger.Printf("execution %s completion rejected: stale fencing token %d", claim.ExecutionID, claim.FencingToken)
+			r.Logger.Warn("completion rejected: stale fencing token",
+				"execution_id", claim.ExecutionID, "fencing_token", claim.FencingToken)
 			return
 		}
-		r.Logger.Printf("complete error for %s: %v", claim.ExecutionID, compErr)
+		r.Logger.Error("complete failed", "execution_id", claim.ExecutionID, "err", compErr)
 	}
 }
 
@@ -111,14 +118,17 @@ func (r *Runtime) heartbeat(ctx context.Context, cancel context.CancelFunc, clai
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			err := r.Store.Heartbeat(context.Background(), claim.ExecutionID, claim.FencingToken, r.LeaseSeconds)
-			if errors.Is(err, store.ErrStale) {
-				r.Logger.Printf("execution %s lost lease (token %d superseded), aborting", claim.ExecutionID, claim.FencingToken)
+			hbCtx, cancelHB := context.WithTimeout(context.Background(), r.HeartbeatTimeout)
+			err := r.Store.Heartbeat(hbCtx, claim.ExecutionID, claim.FencingToken, r.LeaseSeconds)
+			cancelHB()
+			switch {
+			case errors.Is(err, store.ErrStale):
+				r.Logger.Warn("lease lost: token superseded, aborting work",
+					"execution_id", claim.ExecutionID, "fencing_token", claim.FencingToken)
 				cancel()
 				return
-			}
-			if err != nil {
-				r.Logger.Printf("heartbeat error for %s: %v", claim.ExecutionID, err)
+			case err != nil:
+				r.Logger.Error("heartbeat failed", "execution_id", claim.ExecutionID, "err", err)
 			}
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/tyagiquamar/durablemcp/internal/api"
 	"github.com/tyagiquamar/durablemcp/internal/config"
 	"github.com/tyagiquamar/durablemcp/internal/executor"
+	"github.com/tyagiquamar/durablemcp/internal/logging"
 	"github.com/tyagiquamar/durablemcp/internal/mcp"
 	"github.com/tyagiquamar/durablemcp/internal/store"
 )
@@ -19,6 +20,7 @@ const version = "0.1.0"
 
 func main() {
 	cfg := config.Load()
+	logger := logging.New(cfg.LogLevel)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -36,8 +38,7 @@ func main() {
 	handler := &mcp.Handler{Store: st, ServerName: "durablemcp", Version: version}
 
 	if cfg.MCPTransport == "stdio" {
-		log.SetOutput(os.Stderr) // keep stdout clean for JSON-RPC framing
-		log.Printf("durablemcp mcp server (stdio) ready")
+		logger.Info("durablemcp mcp server ready (stdio)")
 		if err := handler.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil {
 			log.Fatalf("stdio transport: %v", err)
 		}
@@ -53,7 +54,7 @@ func main() {
 		_ = httpServer.Close()
 	}()
 
-	log.Printf("durablemcp server listening on %s (mcp http + rest api)", cfg.Addr)
+	logger.Info("durablemcp server listening", "addr", cfg.Addr, "transports", "mcp-http + rest")
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http server: %v", err)
 	}

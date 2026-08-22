@@ -9,7 +9,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/durablemcp-server ./cmd/server \
  && CGO_ENABLED=0 GOOS=linux go build -o /bin/durablemcp-executor ./cmd/executor \
- && CGO_ENABLED=0 GOOS=linux go build -o /bin/durablemcp-scheduler ./cmd/scheduler
+ && CGO_ENABLED=0 GOOS=linux go build -o /bin/durablemcp-scheduler ./cmd/scheduler \
+ && CGO_ENABLED=0 GOOS=linux go build -o /bin/durablemcp-demo-agent ./cmd/demo-agent
 
 FROM alpine:3.21
 RUN apk --no-cache add ca-certificates && adduser -D -u 10001 durablemcp
