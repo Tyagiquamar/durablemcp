@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/durablemcp-server ./cmd/server \
 
 FROM alpine:3.21
 RUN apk --no-cache add ca-certificates && adduser -D -u 10001 durablemcp
-COPY --from=go-builder /bin/durablemcp-server /bin/durablemcp-executor /bin/durablemcp-scheduler /
+COPY --from=go-builder /bin/durablemcp-server /bin/durablemcp-executor /bin/durablemcp-scheduler /bin/durablemcp-demo-agent /
 COPY docker/allinone-entrypoint.sh /allinone-entrypoint.sh
 RUN chmod +x /allinone-entrypoint.sh
 USER durablemcp
