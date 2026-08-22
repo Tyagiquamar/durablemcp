@@ -141,7 +141,8 @@ func (p *Postgres) Claim(ctx context.Context, workerID string, leaseSeconds int)
 }
 
 // Heartbeat extends the lease iff the fencing token still matches the active
-// claim. Returns ErrStale when a newer worker has reclaimed the execution.
+// claim and that lease has not yet expired by database time. Returns ErrStale
+// when a newer worker has reclaimed the execution or the lease lapsed.
 func (p *Postgres) Heartbeat(ctx context.Context, executionID string, token int64, leaseSeconds int) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -153,7 +154,7 @@ func (p *Postgres) Heartbeat(ctx context.Context, executionID string, token int6
 	err = tx.QueryRow(ctx, `
 		UPDATE execution_leases
 		SET lease_expires = now() + make_interval(secs => $3)
-		WHERE execution_id = $1 AND fencing_token = $2
+		WHERE execution_id = $1 AND fencing_token = $2 AND lease_expires > now()
 		RETURNING execution_id::text
 	`, executionID, token, leaseSeconds).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -169,7 +170,8 @@ func (p *Postgres) Heartbeat(ctx context.Context, executionID string, token int6
 }
 
 // Complete marks an execution completed iff the fencing token still owns the
-// lease. A stale token records a stale_rejected event and returns ErrStale.
+// lease and the lease has not yet expired by database time. A stale or expired
+// token records a stale_rejected event and returns ErrStale.
 func (p *Postgres) Complete(ctx context.Context, executionID string, token int64, workerID string, result json.RawMessage) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -182,11 +184,14 @@ func (p *Postgres) Complete(ctx context.Context, executionID string, token int64
 		UPDATE executions
 		SET status = 'completed', result = $3, error_message = NULL, updated_at = now()
 		WHERE id = $1
-		  AND EXISTS (SELECT 1 FROM execution_leases WHERE execution_id = $1 AND fencing_token = $2)
+		  AND EXISTS (
+		    SELECT 1 FROM execution_leases l
+		    WHERE l.execution_id = $1 AND l.fencing_token = $2 AND l.lease_expires > now()
+		  )
 		RETURNING id::text
 	`, executionID, token, result).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := appendEvent(ctx, tx, executionID, "stale_rejected", workerID, &token, map[string]any{"reason": "completion rejected: fencing token superseded"}); err != nil {
+		if err := appendEvent(ctx, tx, executionID, "stale_rejected", workerID, &token, map[string]any{"reason": "completion rejected: fencing token superseded or lease expired"}); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -208,8 +213,9 @@ func (p *Postgres) Complete(ctx context.Context, executionID string, token int64
 
 // Fail records a failed attempt. When retries remain it schedules a retry with
 // exponential backoff; otherwise it marks the execution permanently failed.
-// The lease-token guard is part of the UPDATE itself, so a stale worker can
-// never interleave between the validity check and the state mutation.
+// The lease-token guard (including lease_expires > now(), judged by database
+// time) is part of the UPDATE itself, so a stale or expired worker can never
+// interleave between the validity check and the state mutation.
 func (p *Postgres) Fail(ctx context.Context, executionID string, token int64, workerID, errMsg string) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -227,12 +233,12 @@ func (p *Postgres) Fail(ctx context.Context, executionID string, token int64, wo
 		WHERE id = $1
 		  AND EXISTS (
 		    SELECT 1 FROM execution_leases l
-		    WHERE l.execution_id = executions.id AND l.fencing_token = $2
+		    WHERE l.execution_id = executions.id AND l.fencing_token = $2 AND l.lease_expires > now()
 		  )
 		RETURNING executions.attempts, executions.status = 'failed'
 	`, executionID, token, errMsg).Scan(&attempts, &terminal)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := appendEvent(ctx, tx, executionID, "stale_rejected", workerID, &token, map[string]any{"reason": "failure rejected: fencing token superseded"}); err != nil {
+		if err := appendEvent(ctx, tx, executionID, "stale_rejected", workerID, &token, map[string]any{"reason": "failure rejected: fencing token superseded or lease expired"}); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {

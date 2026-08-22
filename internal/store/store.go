@@ -14,7 +14,8 @@ import (
 var ErrNoWork = errors.New("no ready execution")
 
 // ErrStale is returned when a heartbeat, complete, or fail is attempted with a
-// fencing token that has been superseded by a newer claim.
+// fencing token that has been superseded by a newer claim, or whose lease has
+// already expired by database time (even before the scheduler reaps it).
 var ErrStale = errors.New("stale fencing token")
 
 // ErrUnknownTool is returned when a submission references an unregistered tool.

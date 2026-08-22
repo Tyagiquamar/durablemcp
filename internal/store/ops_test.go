@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -336,6 +337,101 @@ func TestStaleHeartbeatAndCompleteAfterReclaim(t *testing.T) {
 	ex, _ := h.p.GetExecution(h.ctx, id)
 	if !jsonEqual(ex.Result, good) {
 		t.Fatalf("stored result = %s, want winner's %s", ex.Result, good)
+	}
+}
+
+// An expired lease must be rejected even while it still looks claimable:
+// fencing token unchanged, execution still running, scheduler not yet run.
+func TestExpiredLeaseRejectsMutationsBeforeSchedulerPass(t *testing.T) {
+	h := newHarness(t)
+	h.seedTool("slow_compute", 3)
+
+	ids := []string{
+		h.mustSubmit("slow_compute", "expired-hb").ExecutionID,
+		h.mustSubmit("slow_compute", "expired-complete").ExecutionID,
+		h.mustSubmit("slow_compute", "expired-fail").ExecutionID,
+	}
+	claims := make([]store.Claim, 0, len(ids))
+	for range ids {
+		claims = append(claims, h.mustClaim("worker-a"))
+	}
+	byID := map[string]store.Claim{}
+	for _, c := range claims {
+		byID[c.ExecutionID] = c
+	}
+	for _, id := range ids {
+		if _, ok := byID[id]; !ok {
+			t.Fatalf("claimed %v but expected %v", byID, ids)
+		}
+	}
+
+	// Force the leases to expire by database time; deliberately no
+	// RunSchedulerPass in between.
+	for _, id := range ids {
+		h.expireActiveLease(id)
+	}
+
+	leaseExpiry := func(id string) time.Time {
+		h.t.Helper()
+		var exp time.Time
+		if err := h.pool.QueryRow(h.ctx,
+			`SELECT lease_expires FROM execution_leases WHERE execution_id = $1`, id).Scan(&exp); err != nil {
+			h.t.Fatalf("load lease for %s: %v", id, err)
+		}
+		return exp
+	}
+
+	hb := byID[ids[0]]
+	before := leaseExpiry(hb.ExecutionID)
+	if err := h.p.Heartbeat(h.ctx, hb.ExecutionID, hb.FencingToken, 30); !errors.Is(err, store.ErrStale) {
+		t.Fatalf("expired heartbeat err = %v, want ErrStale", err)
+	}
+	if after := leaseExpiry(hb.ExecutionID); !after.Equal(before) {
+		t.Fatalf("expired heartbeat extended the lease: before=%v after=%v", before, after)
+	}
+
+	cm := byID[ids[1]]
+	staleResult := json.RawMessage(`{"from":"expired-worker"}`)
+	if err := h.p.Complete(h.ctx, cm.ExecutionID, cm.FencingToken, "worker-a", staleResult); !errors.Is(err, store.ErrStale) {
+		t.Fatalf("expired completion err = %v, want ErrStale", err)
+	}
+	fl := byID[ids[2]]
+	if err := h.p.Fail(h.ctx, fl.ExecutionID, fl.FencingToken, "worker-a", "late failure"); !errors.Is(err, store.ErrStale) {
+		t.Fatalf("expired failure err = %v, want ErrStale", err)
+	}
+
+	for _, id := range ids {
+		ex, err := h.p.GetExecution(h.ctx, id)
+		if err != nil || ex == nil {
+			h.t.Fatalf("get execution %s: %v (nil=%v)", id, err, ex == nil)
+		}
+		if ex.Status != "running" || ex.Attempts != 1 || ex.Result != nil || ex.ErrorMessage != "" {
+			t.Fatalf("execution %s mutated by expired worker: %+v", id, ex)
+		}
+	}
+	h.requireEvents(ids[1], "stale_rejected")
+	h.requireEvents(ids[2], "stale_rejected")
+
+	// The scheduler can still reclaim the expired work afterwards.
+	n, err := h.p.RunSchedulerPass(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(ids) {
+		t.Fatalf("scheduler changed = %d, want %d", n, len(ids))
+	}
+	for _, id := range ids {
+		c := h.mustClaim("worker-b")
+		if c.ExecutionID != id {
+			t.Fatalf("reclaimed %s, want %s", c.ExecutionID, id)
+		}
+		if c.FencingToken <= byID[id].FencingToken {
+			t.Fatalf("token did not advance for %s: old=%d new=%d", id, byID[id].FencingToken, c.FencingToken)
+		}
+		winner := json.RawMessage(`{"from":"worker-b"}`)
+		if err := h.p.Complete(h.ctx, id, c.FencingToken, "worker-b", winner); err != nil {
+			t.Fatalf("completion after reclaim rejected: %v", err)
+		}
 	}
 }
 
