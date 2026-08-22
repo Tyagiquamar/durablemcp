@@ -1,9 +1,11 @@
 import Link from "next/link"
 import { getExecutionDetail, resolveMode } from "@/lib/dashboard-data"
-import { TopBar } from "@/components/top-bar"
+import { SiteFooter, TopBar } from "@/components/top-bar"
+import { AutoRefresh } from "@/components/auto-refresh"
 import { EventTimeline, StatusBadge, Unavailable, relativeTime } from "@/components/ui"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 export default async function ExecutionDetailPage({
   params,
@@ -20,10 +22,15 @@ export default async function ExecutionDetailPage({
     <>
       <TopBar mode={mode} active="/" />
       <div className="page-heading">
-        <Link href={mode === "live" ? "/?mode=live" : "/"} className="muted">
-          ← Back to overview
-        </Link>
-        <h1 style={{ marginTop: 10 }}>Execution Detail</h1>
+        <div>
+          <p className="kicker">
+            <Link href={mode === "live" ? "/" : "/?mode=demo"} className="quiet-link">
+              ← Back to overview
+            </Link>
+          </p>
+          <h1>Execution Detail</h1>
+        </div>
+        {mode === "live" && detail.state === "ok" ? <AutoRefresh intervalMs={15_000} /> : null}
       </div>
 
       {detail.state === "unavailable" ? (
@@ -93,6 +100,7 @@ export default async function ExecutionDetailPage({
           </section>
         </>
       )}
+      <SiteFooter />
     </>
   )
 }

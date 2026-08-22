@@ -1,9 +1,12 @@
 import Link from "next/link"
 import { getDashboardData, resolveMode } from "@/lib/dashboard-data"
-import { TopBar } from "@/components/top-bar"
+import { SiteFooter, TopBar } from "@/components/top-bar"
+import { AutoRefresh } from "@/components/auto-refresh"
+import { WhySection } from "@/components/why-section"
 import { DemoNotice, EmptyNotice, StatusBadge, Unavailable, relativeTime } from "@/components/ui"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 export default async function OverviewPage({
   searchParams,
@@ -26,8 +29,12 @@ export default async function OverviewPage({
     <>
       <TopBar mode={mode} active="/" />
       <div className="page-heading">
-        <h1>Execution Overview</h1>
-        <p>Every MCP tool call is a persisted execution governed by a fencing-token lease.</p>
+        <div>
+          <p className="kicker">{mode === "live" ? "Live from the running engine" : "Deterministic fixtures"}</p>
+          <h1>Execution Overview</h1>
+          <p>Every MCP tool call is a persisted execution governed by a fencing-token lease.</p>
+        </div>
+        {mode === "live" ? <AutoRefresh /> : null}
       </div>
 
       {data.state === "unavailable" ? (
@@ -64,7 +71,7 @@ export default async function OverviewPage({
                   {data.executions.map((e) => (
                     <tr key={e.id}>
                       <td className="mono">
-                        <Link href={mode === "live" ? `/executions/${e.id}?mode=live` : `/executions/${e.id}`}>
+                        <Link href={mode === "live" ? `/executions/${e.id}` : `/executions/${e.id}?mode=demo`}>
                           {e.id}
                         </Link>
                         <div className="muted">{e.namespace} · {e.idempotency_key}</div>
@@ -92,8 +99,11 @@ export default async function OverviewPage({
               </table>
             )}
           </section>
+
+          <WhySection />
         </>
       )}
+      <SiteFooter />
     </>
   )
 }

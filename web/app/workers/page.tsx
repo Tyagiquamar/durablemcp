@@ -1,8 +1,10 @@
 import { getDashboardData, resolveMode } from "@/lib/dashboard-data"
-import { TopBar } from "@/components/top-bar"
+import { SiteFooter, TopBar } from "@/components/top-bar"
+import { AutoRefresh } from "@/components/auto-refresh"
 import { Unavailable } from "@/components/ui"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 export default async function WorkersPage({
   searchParams,
@@ -16,8 +18,12 @@ export default async function WorkersPage({
     <>
       <TopBar mode={mode} active="/workers" />
       <div className="page-heading">
-        <h1>Workers</h1>
-        <p>Derived from active leases — each worker holds executions under a fencing token.</p>
+        <div>
+          <p className="kicker">Lease holders and fencing tokens</p>
+          <h1>Workers</h1>
+          <p>Derived from active leases — each worker holds executions under a fencing token.</p>
+        </div>
+        {mode === "live" ? <AutoRefresh /> : null}
       </div>
 
       {data.state === "unavailable" ? (
@@ -48,6 +54,7 @@ export default async function WorkersPage({
           )}
         </section>
       )}
+      <SiteFooter />
     </>
   )
 }

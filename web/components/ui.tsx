@@ -7,9 +7,11 @@ export function StatusBadge({ status }: { status: string }) {
 export function Unavailable({ message }: { message?: string }) {
   return (
     <div className="notice error">
-      <strong>Live data unavailable.</strong> {message ?? "The DurableMCP API could not be reached."}
+      <strong>Still waking the engine.</strong> The hosted instance runs on a free tier and sleeps when idle — the
+      first request can take up to a minute, and this page retries for ~45s before giving up. It keeps retrying in
+      the background; give it a moment.
       <div className="muted" style={{ marginTop: 6 }}>
-        Live mode never falls back to demo fixtures. Start the stack with <span className="mono">docker compose up</span>.
+        Last error: {message ?? "API unreachable"}. Live mode never falls back to demo fixtures.
       </div>
     </div>
   )
@@ -27,7 +29,7 @@ export function DemoNotice({ mode }: { mode: DashboardMode }) {
   if (mode !== "demo") return null
   return (
     <div className="notice">
-      Demo mode — deterministic fixtures. Switch to <strong>Live</strong> to read from a running DurableMCP API.
+      Deterministic fixtures. Switch to <strong>Live</strong> to watch the real engine — recoveries included.
     </div>
   )
 }

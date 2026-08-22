@@ -7,33 +7,48 @@ const links = [
   { href: "/workers", label: "Workers" },
 ]
 
-// withMode preserves the demo/live selection across navigation.
+// Live is the default; demo fixtures are opt-in via ?mode=demo.
 function withMode(href: string, mode: DashboardMode): string {
-  return mode === "live" ? `${href}?mode=live` : href
+  return mode === "demo" ? `${href}?mode=demo` : href
 }
 
 export function TopBar({ mode, active }: { mode: DashboardMode; active: string }) {
   return (
-    <div className="topbar">
+    <header className="masthead">
       <div className="brand">
-        <strong>DurableMCP</strong>
-        <span>Durable execution for MCP tool calls</span>
+        <p className="kicker">Durable execution · MCP tool calls</p>
+        <Link href={withMode("/", mode)} className="brand-name">
+          DurableMCP
+        </Link>
       </div>
-      <nav className="nav">
+      <nav className="nav" aria-label="Sections">
         {links.map((l) => (
           <Link key={l.href} href={withMode(l.href, mode)} className={active === l.href ? "active" : ""}>
             {l.label}
           </Link>
         ))}
       </nav>
-      <div className="mode-toggle">
-        <Link href="?" className={mode === "demo" ? "active" : ""}>
+      <div className="mode-toggle" aria-label="Data source">
+        <Link href="?mode=demo" className={mode === "demo" ? "active" : ""}>
           Demo
         </Link>
-        <Link href="?mode=live" className={mode === "live" ? "active" : ""}>
+        <Link href="?" className={mode === "live" ? "active" : ""}>
           Live
         </Link>
       </div>
-    </div>
+    </header>
+  )
+}
+
+export function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <p>
+        Part of a trio of durable-execution systems —{" "}
+        <a href="https://github.com/Tyagiquamar/durablemcp">source</a> ·{" "}
+        <a href="https://quamar.vercel.app">portfolio</a>. Every guarantee on this page is reproducible from the repo:
+        run <span className="mono">make verify</span>.
+      </p>
+    </footer>
   )
 }

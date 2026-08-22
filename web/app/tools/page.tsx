@@ -1,8 +1,10 @@
 import { getDashboardData, resolveMode } from "@/lib/dashboard-data"
-import { TopBar } from "@/components/top-bar"
+import { SiteFooter, TopBar } from "@/components/top-bar"
+import { AutoRefresh } from "@/components/auto-refresh"
 import { Unavailable } from "@/components/ui"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 export default async function ToolsPage({
   searchParams,
@@ -16,8 +18,12 @@ export default async function ToolsPage({
     <>
       <TopBar mode={mode} active="/tools" />
       <div className="page-heading">
-        <h1>Registered Tools</h1>
-        <p>Tools this MCP server exposes, with their retry and lease policy.</p>
+        <div>
+          <p className="kicker">Lease and retry policy per tool</p>
+          <h1>Registered Tools</h1>
+          <p>Tools this MCP server exposes, with their retry and lease policy.</p>
+        </div>
+        {mode === "live" ? <AutoRefresh intervalMs={30_000} /> : null}
       </div>
 
       {data.state === "unavailable" ? (
@@ -46,6 +52,7 @@ export default async function ToolsPage({
           </table>
         </section>
       )}
+      <SiteFooter />
     </>
   )
 }
