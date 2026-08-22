@@ -1,5 +1,7 @@
 # DurableMCP
 
+![CI](https://github.com/Tyagiquamar/durablemcp/actions/workflows/ci.yml/badge.svg)
+
 A Go MCP (Model Context Protocol) server where **every tool execution is backed
 by a PostgreSQL-persisted fencing-token lease and an ordered event log.** When an
 MCP client (Claude Desktop, Cursor, any agent) calls a tool, DurableMCP
@@ -159,10 +161,13 @@ MCP endpoints are unauthenticated (assume a local/trusted network).
 
 ## How This Is Tested
 
-No CI service runs these — `make verify` is the local pre-push ritual:
+GitHub Actions runs `make verify`, `make race`, the dashboard typecheck/build,
+and both Docker image builds on every push and PR to main. The same commands
+reproduce locally:
 
 ```
 make verify   # build + vet + full suite (boots throwaway PostgreSQL via testcontainers)
+make race     # full suite under the race detector
 ```
 
 | Suite | What it proves |
