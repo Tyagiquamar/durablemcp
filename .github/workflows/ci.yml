@@ -23,6 +23,10 @@ jobs:
       - name: Verify
         run: make verify
 
-      # -race needs CGO; ubuntu runners ship gcc.
+      # -race needs CGO; ubuntu runners ship gcc. Ryuk disabled:
+      # testcontainers-go v0.44.0 has a library-internal reaper startup
+      # race that -race can flag; tests clean up their own containers.
       - name: Race detector
         run: make race
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
