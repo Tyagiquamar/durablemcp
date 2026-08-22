@@ -183,12 +183,13 @@ make verify   # build + vet + full suite (boots throwaway PostgreSQL via testcon
 - MCP stdio and HTTP/SSE transports
 - Demo and Live dashboard modes
 - Failure-scene scripts for fencing, duplicate, and retry exhaustion
+- Live hosted demo on free-tier hosting with a self-driving demo agent
+	(dashboard: https://durablemcp-dashboard.vercel.app)
 
 **Not implemented (roadmap)**
 
 - gRPC executor transport
 - OpenTelemetry spans + Prometheus metrics
-- Hosted deployment (Railway billing currently blocked)
 - Cancellation propagation to running executors
 - Tool output streaming for long-running calls
 
