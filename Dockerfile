@@ -2,7 +2,7 @@
 # A single image selects its role at runtime via DURABLEMCP_RUN (see
 # docker/railway-entrypoint.sh): server | executor | scheduler.
 
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

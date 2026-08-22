@@ -2,7 +2,7 @@
 # Runs server + scheduler + two executors in a single container; state lives
 # in Neon Postgres. Use "Dockerfile.demo" as the Dockerfile path in the host UI.
 
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
