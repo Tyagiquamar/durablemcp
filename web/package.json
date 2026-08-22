@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit",
-    "test:browser": "playwright test"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "lucide-react": "^0.454.0",
@@ -16,7 +15,6 @@
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",

@@ -35,7 +35,7 @@ compose-down:
 compose-config:
 	docker compose config
 
-# Local pre-push ritual (CI replacement). Note: no `go fmt` here — this
+# Local equivalent of the core CI verification. Note: no `go fmt` here — this
 # checkout uses CRLF, so repo-wide reformatting would produce pure-noise diffs.
 verify:
 	go build ./...
